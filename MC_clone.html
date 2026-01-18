@@ -272,8 +272,8 @@
 
         // World data - Much larger world
         const CHUNK_SIZE = 16; // Size of each chunk
-        const RENDER_DISTANCE = 4; // Number of chunks to render around player
-        const WORLD_HEIGHT = 32;
+        const RENDER_DISTANCE = 2; // Number of chunks to render around player (reduced for faster loading)
+        const WORLD_HEIGHT = 24; // Reduced height for better performance
         const world = {};
         const chunks = {};
         const blockMeshes = {};
@@ -598,7 +598,7 @@
                 createBlockMesh(x, y, z, world[key]);
                 meshCount++;
 
-                if (meshCount % 100 === 0) {
+                if (meshCount % 200 === 0) {
                     const progress = Math.floor((meshCount / totalBlocks) * 100);
                     buttonEl.textContent = `Creating Blocks... ${progress}%`;
                     await new Promise(resolve => setTimeout(resolve, 0));
