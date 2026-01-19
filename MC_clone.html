@@ -842,19 +842,24 @@
             if (intersects.length > 0) {
                 const intersect = intersects[0];
                 const point = intersect.point.clone();
-                const normal = intersect.face.normal;
+                const normal = intersect.face.normal.clone();
                 
-                // Move point slightly inward along the normal to ensure we're inside the block
-                point.sub(normal.clone().multiplyScalar(0.01));
+                // For breaking: move point slightly inside the block we hit
+                const breakPoint = point.clone().sub(normal.clone().multiplyScalar(0.1));
+                const blockX = Math.floor(breakPoint.x);
+                const blockY = Math.floor(breakPoint.y);
+                const blockZ = Math.floor(breakPoint.z);
                 
-                // Calculate block position - proper floor for negative numbers
-                const blockX = Math.floor(point.x);
-                const blockY = Math.floor(point.y);
-                const blockZ = Math.floor(point.z);
+                // For placing: move point slightly outside in the normal direction
+                const placePoint = point.clone().add(normal.clone().multiplyScalar(0.1));
+                const placeX = Math.floor(placePoint.x);
+                const placeY = Math.floor(placePoint.y);
+                const placeZ = Math.floor(placePoint.z);
 
                 return {
                     hit: true,
-                    position: { x: blockX, y: blockY, z: blockZ },
+                    breakBlock: { x: blockX, y: blockY, z: blockZ },
+                    placeBlock: { x: placeX, y: placeY, z: placeZ },
                     normal: normal
                 };
             }
@@ -869,12 +874,18 @@
             if (!hit.hit) return;
 
             if (e.button === 0) { // Left click - break
-                setBlock(hit.position.x, hit.position.y, hit.position.z, null);
+                setBlock(hit.breakBlock.x, hit.breakBlock.y, hit.breakBlock.z, null);
             } else if (e.button === 2) { // Right click - place
-                const placeX = hit.position.x + Math.round(hit.normal.x);
-                const placeY = hit.position.y + Math.round(hit.normal.y);
-                const placeZ = hit.position.z + Math.round(hit.normal.z);
+                const placeX = hit.placeBlock.x;
+                const placeY = hit.placeBlock.y;
+                const placeZ = hit.placeBlock.z;
                 
+                // Don't place if there's already a block there
+                if (getBlock(placeX, placeY, placeZ) !== null) {
+                    return;
+                }
+                
+                // Don't place block where player is
                 const playerBox = new THREE.Box3(
                     new THREE.Vector3(
                         player.position.x - player.radius,
