@@ -324,8 +324,17 @@
             
             // Remove old mesh if exists
             if (chunkMeshes[chunkKey]) {
-                scene.remove(chunkMeshes[chunkKey]);
-                chunkMeshes[chunkKey].geometry.dispose();
+                const oldGroup = chunkMeshes[chunkKey];
+                scene.remove(oldGroup);
+                
+                // Properly dispose of all child meshes and their geometries
+                oldGroup.children.forEach(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        // Don't dispose materials as they're shared
+                    }
+                });
+                
                 delete chunkMeshes[chunkKey];
             }
 
