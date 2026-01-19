@@ -775,15 +775,14 @@
             // Collision detection
             player.onGround = false;
             
-            // Apply Y movement and check vertical collisions
-            const feetY = Math.floor(nextPos.y);
-            const headY = Math.floor(nextPos.y + player.height);
-            
-            // Check if standing on ground
+            // Check ground collision first
             let onSolidGround = false;
+            const feetY = Math.floor(nextPos.y);
+            
             for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
                 for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
-                    if (getBlock(x, feetY - 1, z) !== null) {
+                    // Check block at feet level
+                    if (getBlock(x, feetY, z) !== null) {
                         onSolidGround = true;
                         break;
                     }
@@ -791,13 +790,15 @@
                 if (onSolidGround) break;
             }
             
+            // If we hit ground while falling, stop
             if (onSolidGround && player.velocity.y <= 0) {
-                nextPos.y = feetY;
+                nextPos.y = feetY + 1; // Stand on top of the block
                 player.velocity.y = 0;
                 player.onGround = true;
             }
             
             // Check ceiling collision
+            const headY = Math.ceil(nextPos.y + player.height);
             for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
                 for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
                     if (getBlock(x, headY, z) !== null && player.velocity.y > 0) {
@@ -807,16 +808,18 @@
             }
 
             // Check X collision
-            const testX = nextPos.x + Math.sign(player.velocity.x) * player.radius;
             let xCollision = false;
-            for (let y = feetY; y <= headY; y++) {
-                for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
-                    if (getBlock(Math.floor(testX), y, z) !== null) {
-                        xCollision = true;
-                        break;
+            if (player.velocity.x !== 0) {
+                const testX = Math.floor(nextPos.x + Math.sign(player.velocity.x) * player.radius);
+                for (let y = feetY; y < feetY + 2; y++) {
+                    for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
+                        if (getBlock(testX, y, z) !== null) {
+                            xCollision = true;
+                            break;
+                        }
                     }
+                    if (xCollision) break;
                 }
-                if (xCollision) break;
             }
             if (xCollision) {
                 nextPos.x = player.position.x;
@@ -824,16 +827,18 @@
             }
 
             // Check Z collision
-            const testZ = nextPos.z + Math.sign(player.velocity.z) * player.radius;
             let zCollision = false;
-            for (let y = feetY; y <= headY; y++) {
-                for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
-                    if (getBlock(x, y, Math.floor(testZ)) !== null) {
-                        zCollision = true;
-                        break;
+            if (player.velocity.z !== 0) {
+                const testZ = Math.floor(nextPos.z + Math.sign(player.velocity.z) * player.radius);
+                for (let y = feetY; y < feetY + 2; y++) {
+                    for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
+                        if (getBlock(x, y, testZ) !== null) {
+                            zCollision = true;
+                            break;
+                        }
                     }
+                    if (zCollision) break;
                 }
-                if (zCollision) break;
             }
             if (zCollision) {
                 nextPos.z = player.position.z;
