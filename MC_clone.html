@@ -288,14 +288,25 @@
         }
 
         function setBlock(x, y, z, type, updateMesh = true) {
+            // Round to ensure we're working with integer coordinates
+            x = Math.floor(x);
+            y = Math.floor(y);
+            z = Math.floor(z);
+            
             const key = getBlockKey(x, y, z);
             
             if (type === null) {
-                delete world[key];
-                blockCount--;
+                // Only delete if block exists
+                if (world[key] !== undefined) {
+                    delete world[key];
+                    blockCount--;
+                }
             } else {
+                // Only add if block doesn't already exist at this position
+                if (world[key] === undefined) {
+                    blockCount++;
+                }
                 world[key] = type;
-                blockCount++;
             }
             
             if (updateMesh) {
@@ -823,11 +834,14 @@
                 const intersect = intersects[0];
                 const point = intersect.point.clone();
                 
-                // Calculate block position from intersection point
+                // Move point slightly inward along the normal to ensure we're inside the block
+                point.add(intersect.face.normal.clone().multiplyScalar(-0.01));
+                
+                // Calculate block position - the block we hit
                 const blockPos = new THREE.Vector3(
-                    Math.floor(point.x + intersect.face.normal.x * 0.5),
-                    Math.floor(point.y + intersect.face.normal.y * 0.5),
-                    Math.floor(point.z + intersect.face.normal.z * 0.5)
+                    Math.floor(point.x),
+                    Math.floor(point.y),
+                    Math.floor(point.z)
                 );
 
                 return {
