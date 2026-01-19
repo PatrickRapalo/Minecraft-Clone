@@ -236,10 +236,9 @@
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: false }); // Disabled antialiasing for performance
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.enabled = false; // Disabled shadows for better performance
         document.body.appendChild(renderer.domElement);
 
         // Lighting
@@ -248,13 +247,6 @@
 
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(50, 100, 50);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -50;
-        directionalLight.shadow.camera.right = 50;
-        directionalLight.shadow.camera.top = 50;
-        directionalLight.shadow.camera.bottom = -50;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
         scene.add(directionalLight);
 
         // Block materials with better colors
@@ -270,10 +262,10 @@
             7: new THREE.MeshLambertMaterial({ color: 0x2F4F2F }), // Dark Grass
         };
 
-        // World data - Much larger world
+        // World data - Optimized for performance
         const CHUNK_SIZE = 16; // Size of each chunk
-        const RENDER_DISTANCE = 2; // Number of chunks to render around player (reduced for faster loading)
-        const WORLD_HEIGHT = 24; // Reduced height for better performance
+        const RENDER_DISTANCE = 1; // Reduced to 1 chunk for much better performance
+        const WORLD_HEIGHT = 20; // Reduced height for better performance
         const world = {};
         const chunks = {};
         const blockMeshes = {};
@@ -325,6 +317,17 @@
                 scene.remove(blockMeshes[key]);
             }
 
+            // Don't render blocks that are completely surrounded (optimization)
+            const isHidden = 
+                getBlock(x + 1, y, z) !== null &&
+                getBlock(x - 1, y, z) !== null &&
+                getBlock(x, y + 1, z) !== null &&
+                getBlock(x, y - 1, z) !== null &&
+                getBlock(x, y, z + 1) !== null &&
+                getBlock(x, y, z - 1) !== null;
+            
+            if (isHidden) return; // Don't create mesh for hidden blocks
+
             const geometry = new THREE.BoxGeometry(1, 1, 1);
             let mesh;
 
@@ -343,8 +346,6 @@
             }
 
             mesh.position.set(x, y, z);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
             scene.add(mesh);
             blockMeshes[key] = mesh;
         }
@@ -775,35 +776,41 @@
             player.onGround = false;
             
             // Check Y collision (ground/ceiling)
-            for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
-                for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
-                    if (getBlock(x, Math.floor(nextPos.y), z) !== null) {
-                        nextPos.y = Math.floor(nextPos.y) + 1;
+            for (let x = Math.floor(nextPos.x - player.radius); x <= Math.ceil(nextPos.x + player.radius); x++) {
+                for (let z = Math.floor(nextPos.z - player.radius); z <= Math.ceil(nextPos.z + player.radius); z++) {
+                    // Ground collision
+                    if (getBlock(x, Math.floor(nextPos.y - 0.1), z) !== null) {
+                        nextPos.y = Math.floor(nextPos.y - 0.1) + 1;
                         player.velocity.y = 0;
                         player.onGround = true;
                     }
-                    if (getBlock(x, Math.floor(nextPos.y + player.height), z) !== null) {
+                    // Ceiling collision
+                    if (getBlock(x, Math.ceil(nextPos.y + player.height), z) !== null) {
                         player.velocity.y = 0;
                     }
                 }
             }
 
             // Check X collision
-            for (let y = Math.floor(player.position.y); y < Math.floor(player.position.y + player.height); y++) {
-                for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
-                    if (getBlock(Math.floor(nextPos.x + Math.sign(player.velocity.x) * player.radius), y, z) !== null) {
+            for (let y = Math.floor(nextPos.y); y <= Math.ceil(nextPos.y + player.height); y++) {
+                for (let z = Math.floor(nextPos.z - player.radius); z <= Math.ceil(nextPos.z + player.radius); z++) {
+                    const checkX = Math.floor(nextPos.x + Math.sign(player.velocity.x) * player.radius);
+                    if (getBlock(checkX, y, z) !== null) {
                         nextPos.x = player.position.x;
                         player.velocity.x = 0;
+                        break;
                     }
                 }
             }
 
             // Check Z collision
-            for (let y = Math.floor(player.position.y); y < Math.floor(player.position.y + player.height); y++) {
-                for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
-                    if (getBlock(x, y, Math.floor(nextPos.z + Math.sign(player.velocity.z) * player.radius)) !== null) {
+            for (let y = Math.floor(nextPos.y); y <= Math.ceil(nextPos.y + player.height); y++) {
+                for (let x = Math.floor(nextPos.x - player.radius); x <= Math.ceil(nextPos.x + player.radius); x++) {
+                    const checkZ = Math.floor(nextPos.z + Math.sign(player.velocity.z) * player.radius);
+                    if (getBlock(x, y, checkZ) !== null) {
                         nextPos.z = player.position.z;
                         player.velocity.z = 0;
+                        break;
                     }
                 }
             }
