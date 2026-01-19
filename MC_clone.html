@@ -809,43 +809,69 @@
 
             // Check X collision
             let xCollision = false;
-            if (player.velocity.x !== 0) {
-                const testX = Math.floor(nextPos.x + Math.sign(player.velocity.x) * player.radius);
-                for (let y = feetY; y < feetY + 2; y++) {
-                    for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
-                        if (getBlock(testX, y, z) !== null) {
-                            xCollision = true;
-                            break;
-                        }
+            const newX = nextPos.x;
+            const testX = Math.floor(newX + Math.sign(player.velocity.x) * player.radius);
+            for (let y = feetY; y < feetY + 2; y++) {
+                for (let z = Math.floor(player.position.z - player.radius); z <= Math.floor(player.position.z + player.radius); z++) {
+                    if (player.velocity.x !== 0 && getBlock(testX, y, z) !== null) {
+                        xCollision = true;
+                        break;
                     }
-                    if (xCollision) break;
                 }
+                if (xCollision) break;
             }
             if (xCollision) {
                 nextPos.x = player.position.x;
-                player.velocity.x = 0;
             }
 
             // Check Z collision
             let zCollision = false;
-            if (player.velocity.z !== 0) {
-                const testZ = Math.floor(nextPos.z + Math.sign(player.velocity.z) * player.radius);
-                for (let y = feetY; y < feetY + 2; y++) {
-                    for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
-                        if (getBlock(x, y, testZ) !== null) {
-                            zCollision = true;
-                            break;
-                        }
+            const newZ = nextPos.z;
+            const testZ = Math.floor(newZ + Math.sign(player.velocity.z) * player.radius);
+            for (let y = feetY; y < feetY + 2; y++) {
+                for (let x = Math.floor(player.position.x - player.radius); x <= Math.floor(player.position.x + player.radius); x++) {
+                    if (player.velocity.z !== 0 && getBlock(x, y, testZ) !== null) {
+                        zCollision = true;
+                        break;
                     }
-                    if (zCollision) break;
                 }
+                if (zCollision) break;
             }
             if (zCollision) {
                 nextPos.z = player.position.z;
-                player.velocity.z = 0;
             }
 
             player.position.copy(nextPos);
+
+            // Dynamic chunk loading - generate chunks as player approaches edges
+            const playerChunk = worldToChunk(player.position.x, player.position.z);
+            
+            // Check surrounding chunks and generate if needed
+            for (let cx = playerChunk.cx - RENDER_DISTANCE; cx <= playerChunk.cx + RENDER_DISTANCE; cx++) {
+                for (let cz = playerChunk.cz - RENDER_DISTANCE; cz <= playerChunk.cz + RENDER_DISTANCE; cz++) {
+                    const chunkKey = getChunkKey(cx, cz);
+                    if (!chunks[chunkKey]) {
+                        // Generate new chunk
+                        generateChunk(cx, cz);
+                        
+                        // Create meshes for the new chunk
+                        const startX = cx * CHUNK_SIZE;
+                        const startZ = cz * CHUNK_SIZE;
+                        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+                            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                                for (let y = 0; y < WORLD_HEIGHT; y++) {
+                                    const x = startX + lx;
+                                    const z = startZ + lz;
+                                    const key = getBlockKey(x, y, z);
+                                    if (world[key] !== undefined && !blockMeshes[key]) {
+                                        createBlockMesh(x, y, z, world[key]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             // Update camera
             camera.position.copy(player.position);
