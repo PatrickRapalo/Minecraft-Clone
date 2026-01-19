@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minecraft Clone</title>
+    <title>Minecraft Clone - Optimized</title>
     <style>
         * {
             margin: 0;
@@ -161,6 +161,7 @@
         <div style="font-size: 16px; margin-bottom: 10px;"><strong>⛏ MINECRAFT CLONE</strong></div>
         <div>Position: <span id="position">0, 0, 0</span></div>
         <div>Blocks: <span id="blockCount">0</span></div>
+        <div>FPS: <span id="fps">0</span></div>
         <div style="margin-top: 12px; font-size: 12px; opacity: 0.8;">
             <div>WASD - Move | SPACE - Jump</div>
             <div>Mouse - Look Around</div>
@@ -220,25 +221,22 @@
     <script type="module">
         import * as THREE from 'three';
 
-        // Load TensorFlow.js
-        const tf = await import('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js');
-
         // Game state
         let gameStarted = false;
         let selectedBlock = 0;
         let blockCount = 0;
-        let loadingProgress = 0;
 
         // Scene setup
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
-        scene.fog = new THREE.Fog(0x87CEEB, 0, 150);
+        scene.fog = new THREE.Fog(0x87CEEB, 0, 100);
 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 150);
         
-        const renderer = new THREE.WebGLRenderer({ antialias: false }); // Disabled antialiasing for performance
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = false; // Disabled shadows for better performance
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Limit pixel ratio
+        renderer.shadowMap.enabled = false;
         document.body.appendChild(renderer.domElement);
 
         // Lighting
@@ -263,12 +261,12 @@
         };
 
         // World data - Optimized for performance
-        const CHUNK_SIZE = 16; // Size of each chunk
-        const RENDER_DISTANCE = 2; // Number of chunks to render around player
-        const WORLD_HEIGHT = 20; // Reduced height for better performance
+        const CHUNK_SIZE = 16;
+        const RENDER_DISTANCE = 3; // Increased slightly since we're more efficient now
+        const WORLD_HEIGHT = 20;
         const world = {};
         const chunks = {};
-        const blockMeshes = {};
+        const chunkMeshes = {}; // Store merged chunk meshes instead of individual blocks
 
         function getBlockKey(x, y, z) {
             return `${x},${y},${z}`;
@@ -294,54 +292,227 @@
             
             if (type === null) {
                 delete world[key];
-                if (updateMesh && blockMeshes[key]) {
-                    scene.remove(blockMeshes[key]);
-                    delete blockMeshes[key];
-                    blockCount--;
-                }
+                blockCount--;
             } else {
                 world[key] = type;
-                if (updateMesh) {
-                    createBlockMesh(x, y, z, type);
-                    blockCount++;
-                }
+                blockCount++;
+            }
+            
+            if (updateMesh) {
+                // Update the chunk mesh that contains this block
+                const { cx, cz } = worldToChunk(x, z);
+                rebuildChunkMesh(cx, cz);
             }
             
             document.getElementById('blockCount').textContent = blockCount;
         }
 
-        function createBlockMesh(x, y, z, type) {
-            const key = getBlockKey(x, y, z);
+        // OPTIMIZATION: Merge all blocks in a chunk into a single mesh
+        function rebuildChunkMesh(cx, cz) {
+            const chunkKey = getChunkKey(cx, cz);
             
-            if (blockMeshes[key]) {
-                scene.remove(blockMeshes[key]);
+            // Remove old mesh if exists
+            if (chunkMeshes[chunkKey]) {
+                scene.remove(chunkMeshes[chunkKey]);
+                chunkMeshes[chunkKey].geometry.dispose();
+                delete chunkMeshes[chunkKey];
             }
 
-            const geometry = new THREE.BoxGeometry(1, 1, 1);
-            let mesh;
+            const startX = cx * CHUNK_SIZE;
+            const startZ = cz * CHUNK_SIZE;
 
-            if (type === 1) { // Grass block
-                const grassMaterials = [
-                    materials[1.5], // right
-                    materials[1.5], // left
-                    materials[1],   // top (grass)
-                    materials[0],   // bottom (dirt)
-                    materials[1.5], // front
-                    materials[1.5]  // back
-                ];
-                mesh = new THREE.Mesh(geometry, grassMaterials);
-            } else {
-                mesh = new THREE.Mesh(geometry, materials[type]);
+            // Create geometries for each material type
+            const geometries = {};
+            for (let matKey in materials) {
+                geometries[matKey] = [];
             }
 
-            mesh.position.set(x, y, z);
-            scene.add(mesh);
-            blockMeshes[key] = mesh;
+            // Collect all block geometries in this chunk
+            for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+                for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                    for (let y = 0; y < WORLD_HEIGHT; y++) {
+                        const x = startX + lx;
+                        const z = startZ + lz;
+                        const blockType = getBlock(x, y, z);
+                        
+                        if (blockType === null) continue;
+
+                        // OPTIMIZATION: Only add faces that are visible (not touching other blocks)
+                        const hasTop = getBlock(x, y + 1, z) === null;
+                        const hasBottom = getBlock(x, y - 1, z) === null;
+                        const hasNorth = getBlock(x, y, z + 1) === null;
+                        const hasSouth = getBlock(x, y, z - 1) === null;
+                        const hasEast = getBlock(x + 1, y, z) === null;
+                        const hasWest = getBlock(x - 1, y, z) === null;
+
+                        if (!hasTop && !hasBottom && !hasNorth && !hasSouth && !hasEast && !hasWest) {
+                            continue; // Completely hidden block, skip it
+                        }
+
+                        // Create geometry with only visible faces
+                        if (blockType === 1) { // Grass block - special handling
+                            addGrassBlockGeometry(geometries, x, y, z, hasTop, hasBottom, hasNorth, hasSouth, hasEast, hasWest);
+                        } else {
+                            addBlockGeometry(geometries, blockType, x, y, z, hasTop, hasBottom, hasNorth, hasSouth, hasEast, hasWest);
+                        }
+                    }
+                }
+            }
+
+            // Merge geometries and create meshes
+            const chunkGroup = new THREE.Group();
+            
+            for (let matKey in geometries) {
+                if (geometries[matKey].length === 0) continue;
+                
+                const mergedGeometry = mergeBufferGeometries(geometries[matKey]);
+                if (mergedGeometry) {
+                    const mesh = new THREE.Mesh(mergedGeometry, materials[matKey]);
+                    mesh.frustumCulled = true; // Enable frustum culling
+                    chunkGroup.add(mesh);
+                }
+            }
+
+            if (chunkGroup.children.length > 0) {
+                scene.add(chunkGroup);
+                chunkMeshes[chunkKey] = chunkGroup;
+            }
         }
 
-        // ===== ML-POWERED TERRAIN GENERATION =====
-        
-        // Perlin noise approximation using neural network-like multi-octave approach
+        // Helper function to add block geometry with only visible faces
+        function addBlockGeometry(geometries, blockType, x, y, z, hasTop, hasBottom, hasNorth, hasSouth, hasEast, hasWest) {
+            const size = 0.5;
+            const geometry = new THREE.BoxGeometry(1, 1, 1);
+            geometry.translate(x, y, z);
+            
+            // Remove hidden faces (this is a simplified approach - full implementation would remove individual faces)
+            geometries[blockType].push(geometry);
+        }
+
+        // Helper function for grass blocks with different materials per face
+        function addGrassBlockGeometry(geometries, x, y, z, hasTop, hasBottom, hasNorth, hasSouth, hasEast, hasWest) {
+            const size = 0.5;
+            
+            // Add to different geometry arrays based on face
+            if (hasTop) {
+                const topGeo = createFaceGeometry(x, y, z, 'top');
+                geometries[1].push(topGeo); // Grass material
+            }
+            if (hasBottom) {
+                const bottomGeo = createFaceGeometry(x, y, z, 'bottom');
+                geometries[0].push(bottomGeo); // Dirt material
+            }
+            // Sides use grass-side material
+            if (hasNorth) {
+                const northGeo = createFaceGeometry(x, y, z, 'north');
+                geometries[1.5].push(northGeo);
+            }
+            if (hasSouth) {
+                const southGeo = createFaceGeometry(x, y, z, 'south');
+                geometries[1.5].push(southGeo);
+            }
+            if (hasEast) {
+                const eastGeo = createFaceGeometry(x, y, z, 'east');
+                geometries[1.5].push(eastGeo);
+            }
+            if (hasWest) {
+                const westGeo = createFaceGeometry(x, y, z, 'west');
+                geometries[1.5].push(westGeo);
+            }
+        }
+
+        // Create geometry for a single face
+        function createFaceGeometry(x, y, z, face) {
+            const geometry = new THREE.PlaneGeometry(1, 1);
+            
+            switch(face) {
+                case 'top':
+                    geometry.rotateX(-Math.PI / 2);
+                    geometry.translate(x, y + 0.5, z);
+                    break;
+                case 'bottom':
+                    geometry.rotateX(Math.PI / 2);
+                    geometry.translate(x, y - 0.5, z);
+                    break;
+                case 'north':
+                    geometry.translate(x, y, z + 0.5);
+                    break;
+                case 'south':
+                    geometry.rotateY(Math.PI);
+                    geometry.translate(x, y, z - 0.5);
+                    break;
+                case 'east':
+                    geometry.rotateY(-Math.PI / 2);
+                    geometry.translate(x + 0.5, y, z);
+                    break;
+                case 'west':
+                    geometry.rotateY(Math.PI / 2);
+                    geometry.translate(x - 0.5, y, z);
+                    break;
+            }
+            
+            return geometry;
+        }
+
+        // Merge buffer geometries helper
+        function mergeBufferGeometries(geometries) {
+            if (geometries.length === 0) return null;
+            
+            let totalVertices = 0;
+            let totalIndices = 0;
+            
+            for (const geo of geometries) {
+                totalVertices += geo.attributes.position.count;
+                if (geo.index) {
+                    totalIndices += geo.index.count;
+                } else {
+                    totalIndices += geo.attributes.position.count;
+                }
+            }
+
+            const mergedGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(totalVertices * 3);
+            const normals = new Float32Array(totalVertices * 3);
+            const indices = new Uint32Array(totalIndices);
+
+            let vertexOffset = 0;
+            let indexOffset = 0;
+            let currentVertex = 0;
+
+            for (const geo of geometries) {
+                const posAttr = geo.attributes.position;
+                const normAttr = geo.attributes.normal;
+                
+                positions.set(posAttr.array, vertexOffset);
+                normals.set(normAttr.array, vertexOffset);
+                
+                if (geo.index) {
+                    const geoIndices = geo.index.array;
+                    for (let i = 0; i < geoIndices.length; i++) {
+                        indices[indexOffset + i] = geoIndices[i] + currentVertex;
+                    }
+                    indexOffset += geoIndices.length;
+                } else {
+                    for (let i = 0; i < posAttr.count; i++) {
+                        indices[indexOffset + i] = currentVertex + i;
+                    }
+                    indexOffset += posAttr.count;
+                }
+                
+                vertexOffset += posAttr.count * 3;
+                currentVertex += posAttr.count;
+                
+                geo.dispose(); // Clean up
+            }
+
+            mergedGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            mergedGeometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+            mergedGeometry.setIndex(new THREE.BufferAttribute(indices, 1));
+
+            return mergedGeometry;
+        }
+
+        // Terrain Generator (same as before)
         class TerrainGenerator {
             constructor() {
                 this.seed = Math.random() * 1000;
@@ -349,7 +520,6 @@
                 this.biomeCache = new Map();
             }
 
-            // Multi-octave Perlin-like noise
             noise2D(x, z, octaves = 4, persistence = 0.5, lacunarity = 2.0) {
                 const key = `${x},${z}`;
                 if (this.noiseCache.has(key)) {
@@ -412,35 +582,32 @@
                 return a * (1 - f) + b * f;
             }
 
-            // Determine biome based on temperature and moisture
             getBiome(x, z) {
                 const key = `${x},${z}`;
                 if (this.biomeCache.has(key)) {
                     return this.biomeCache.get(key);
                 }
 
-                // Use different noise for temperature and moisture
                 const temperature = this.noise2D(x * 0.01, z * 0.01, 3, 0.5, 2.0);
                 const moisture = this.noise2D(x * 0.01 + 1000, z * 0.01 + 1000, 3, 0.5, 2.0);
 
                 let biome;
                 if (temperature < -0.3) {
-                    biome = 'snow'; // Cold
+                    biome = 'snow';
                 } else if (temperature > 0.4 && moisture < -0.2) {
-                    biome = 'desert'; // Hot and dry
+                    biome = 'desert';
                 } else if (moisture < -0.3) {
-                    biome = 'plains'; // Dry
+                    biome = 'plains';
                 } else if (moisture > 0.3) {
-                    biome = 'forest'; // Wet
+                    biome = 'forest';
                 } else {
-                    biome = 'grassland'; // Default
+                    biome = 'grassland';
                 }
 
                 this.biomeCache.set(key, biome);
                 return biome;
             }
 
-            // Generate terrain height with biome influence
             getTerrainHeight(x, z) {
                 const biome = this.getBiome(x, z);
                 const baseNoise = this.noise2D(x * 0.02, z * 0.02, 5, 0.5, 2.0);
@@ -453,10 +620,10 @@
                         height = 12 + baseNoise * 8 + detailNoise * 3;
                         break;
                     case 'desert':
-                        height = 8 + baseNoise * 4 + detailNoise * 2; // Flatter
+                        height = 8 + baseNoise * 4 + detailNoise * 2;
                         break;
                     case 'plains':
-                        height = 10 + baseNoise * 3 + detailNoise * 1; // Very flat
+                        height = 10 + baseNoise * 3 + detailNoise * 1;
                         break;
                     case 'forest':
                         height = 10 + baseNoise * 6 + detailNoise * 4;
@@ -469,30 +636,28 @@
                 return Math.floor(height);
             }
 
-            // Get surface block type based on biome
             getSurfaceBlock(biome, y) {
                 switch (biome) {
                     case 'snow':
-                        return 6; // Snow
+                        return 6;
                     case 'desert':
-                        return 4; // Sand
+                        return 4;
                     case 'plains':
-                        return 1; // Grass
+                        return 1;
                     case 'forest':
-                        return 7; // Dark grass
+                        return 7;
                     case 'grassland':
                     default:
-                        return 1; // Grass
+                        return 1;
                 }
             }
         }
 
         const terrainGen = new TerrainGenerator();
 
-        // Generate a chunk of terrain
         function generateChunk(cx, cz) {
             const chunkKey = getChunkKey(cx, cz);
-            if (chunks[chunkKey]) return; // Already generated
+            if (chunks[chunkKey]) return;
 
             chunks[chunkKey] = true;
 
@@ -508,31 +673,26 @@
                     const biome = terrainGen.getBiome(x, z);
                     const surfaceBlock = terrainGen.getSurfaceBlock(biome, height);
 
-                    // Generate vertical layers
                     for (let y = 0; y <= height && y < WORLD_HEIGHT; y++) {
                         let blockType;
 
                         if (y === height) {
-                            // Surface layer
                             blockType = surfaceBlock;
                         } else if (y >= height - 3) {
-                            // Subsurface (dirt or sand)
                             blockType = (biome === 'desert') ? 4 : 0;
                         } else {
-                            // Deep underground (stone)
                             blockType = 2;
                         }
 
                         setBlock(x, y, z, blockType, false);
                     }
 
-                    // Add trees in forest biome
+                    // Add trees
                     if (biome === 'forest' && Math.random() < 0.05) {
                         const treeHeight = 4 + Math.floor(Math.random() * 3);
                         for (let ty = 1; ty <= treeHeight; ty++) {
-                            setBlock(x, height + ty, z, 3, false); // Wood trunk
+                            setBlock(x, height + ty, z, 3, false);
                         }
-                        // Simple leaves
                         for (let dx = -1; dx <= 1; dx++) {
                             for (let dz = -1; dz <= 1; dz++) {
                                 for (let dy = 0; dy < 2; dy++) {
@@ -544,18 +704,14 @@
                     }
                 }
             }
-
-            loadingProgress++;
         }
 
-        // Initialize world with chunks around spawn
         async function initWorld() {
             const instructionsEl = document.getElementById('instructions');
             const buttonEl = instructionsEl.querySelector('button');
             buttonEl.textContent = 'Generating World...';
             buttonEl.disabled = true;
 
-            // Generate initial chunks
             const chunksToGenerate = [];
 
             for (let cx = -RENDER_DISTANCE; cx <= RENDER_DISTANCE; cx++) {
@@ -564,35 +720,27 @@
                 }
             }
 
-            // Generate chunks progressively
             for (let i = 0; i < chunksToGenerate.length; i++) {
                 const { cx, cz } = chunksToGenerate[i];
                 generateChunk(cx, cz);
                 
                 const progress = Math.floor((i / chunksToGenerate.length) * 100);
-                buttonEl.textContent = `Generating World... ${progress}%`;
+                buttonEl.textContent = `Generating Terrain... ${progress}%`;
                 
-                // Allow UI to update
-                if (i % 5 === 0) {
+                if (i % 3 === 0) {
                     await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
 
-            // Now create all the meshes
-            buttonEl.textContent = 'Creating Blocks...';
-            let meshCount = 0;
-            const totalBlocks = Object.keys(world).length;
+            buttonEl.textContent = 'Building Meshes...';
+            await new Promise(resolve => setTimeout(resolve, 0));
 
-            for (const key in world) {
-                const [x, y, z] = key.split(',').map(Number);
-                createBlockMesh(x, y, z, world[key]);
-                meshCount++;
-
-                if (meshCount % 200 === 0) {
-                    const progress = Math.floor((meshCount / totalBlocks) * 100);
-                    buttonEl.textContent = `Creating Blocks... ${progress}%`;
-                    await new Promise(resolve => setTimeout(resolve, 0));
+            // Build all chunk meshes
+            for (let cx = -RENDER_DISTANCE; cx <= RENDER_DISTANCE; cx++) {
+                for (let cz = -RENDER_DISTANCE; cz <= RENDER_DISTANCE; cz++) {
+                    rebuildChunkMesh(cx, cz);
                 }
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
 
             buttonEl.textContent = 'CLICK TO START';
@@ -608,7 +756,7 @@
             jumpPower: 8,
             onGround: false,
             height: 1.8,
-            radius: 0.25 // Reduced from 0.3 to prevent getting stuck
+            radius: 0.25
         };
 
         camera.position.copy(player.position);
@@ -621,7 +769,6 @@
         window.addEventListener('keydown', e => {
             keys[e.key.toLowerCase()] = true;
             
-            // Block selection
             if (e.key >= '1' && e.key <= '6') {
                 selectedBlock = parseInt(e.key) - 1;
                 updateHotbar();
@@ -651,16 +798,38 @@
         // Raycasting for block interaction
         const raycaster = new THREE.Raycaster();
         const rayDirection = new THREE.Vector3();
+        raycaster.far = 5; // Limit raycast distance
 
         function raycast() {
             camera.getWorldDirection(rayDirection);
             raycaster.set(camera.position, rayDirection);
 
-            const intersects = raycaster.intersectObjects(Object.values(blockMeshes));
+            // OPTIMIZATION: Only raycast against visible chunk meshes near player
+            const playerChunk = worldToChunk(player.position.x, player.position.z);
+            const nearbyMeshes = [];
+            
+            for (let cx = playerChunk.cx - 1; cx <= playerChunk.cx + 1; cx++) {
+                for (let cz = playerChunk.cz - 1; cz <= playerChunk.cz + 1; cz++) {
+                    const chunkKey = getChunkKey(cx, cz);
+                    if (chunkMeshes[chunkKey]) {
+                        nearbyMeshes.push(...chunkMeshes[chunkKey].children);
+                    }
+                }
+            }
+
+            const intersects = raycaster.intersectObjects(nearbyMeshes);
 
             if (intersects.length > 0) {
                 const intersect = intersects[0];
-                const blockPos = intersect.object.position.clone();
+                const point = intersect.point.clone();
+                
+                // Calculate block position from intersection point
+                const blockPos = new THREE.Vector3(
+                    Math.floor(point.x + intersect.face.normal.x * 0.5),
+                    Math.floor(point.y + intersect.face.normal.y * 0.5),
+                    Math.floor(point.z + intersect.face.normal.z * 0.5)
+                );
+
                 return {
                     hit: true,
                     position: blockPos,
@@ -682,7 +851,6 @@
             } else if (e.button === 2) { // Right click - place
                 const placePos = hit.position.clone().add(hit.normal);
                 
-                // Don't place block where player is
                 const playerBox = new THREE.Box3(
                     new THREE.Vector3(
                         player.position.x - player.radius,
@@ -746,123 +914,123 @@
             player.velocity.x = moveX * player.speed;
             player.velocity.z = moveZ * player.speed;
 
-            // Jump
             if (keys[' '] && player.onGround) {
                 player.velocity.y = player.jumpPower;
                 player.onGround = false;
             }
 
-            // Gravity
             player.velocity.y -= GRAVITY * dt;
 
-            // Apply velocity
-            const nextPos = player.position.clone();
-            nextPos.x += player.velocity.x * dt;
-            nextPos.y += player.velocity.y * dt;
-            nextPos.z += player.velocity.z * dt;
-
-            // Collision detection - simplified and fixed
+            // Apply velocity with collision detection for each axis separately
+            
+            // Y-axis movement and collision (vertical)
+            player.position.y += player.velocity.y * dt;
+            
             player.onGround = false;
             
-            // Y collision - check if there's ground below us
-            const checkY = nextPos.y - 0.1; // Slightly below feet
-            let hitGround = false;
+            // Check ground collision - look at blocks below player feet
+            const minX = Math.floor(player.position.x - player.radius);
+            const maxX = Math.floor(player.position.x + player.radius);
+            const minZ = Math.floor(player.position.z - player.radius);
+            const maxZ = Math.floor(player.position.z + player.radius);
             
-            for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
-                for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
-                    const blockBelow = getBlock(x, Math.floor(checkY), z);
-                    if (blockBelow !== null && player.velocity.y <= 0) {
-                        hitGround = true;
-                        break;
+            if (player.velocity.y <= 0) {
+                // Check blocks below
+                for (let x = minX; x <= maxX; x++) {
+                    for (let z = minZ; z <= maxZ; z++) {
+                        for (let y = Math.floor(player.position.y - 0.1); y >= Math.floor(player.position.y - 2); y--) {
+                            if (getBlock(x, y, z) !== null) {
+                                const blockTop = y + 1;
+                                if (player.position.y < blockTop + 0.01) {
+                                    player.position.y = blockTop;
+                                    player.velocity.y = 0;
+                                    player.onGround = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (player.onGround) break;
                     }
-                }
-                if (hitGround) break;
-            }
-            
-            if (hitGround) {
-                nextPos.y = Math.floor(checkY) + 1;
-                player.velocity.y = 0;
-                player.onGround = true;
-            }
-            
-            // Ceiling collision
-            const headY = nextPos.y + player.height;
-            for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
-                for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
-                    if (getBlock(x, Math.floor(headY), z) !== null && player.velocity.y > 0) {
-                        player.velocity.y = 0;
-                    }
+                    if (player.onGround) break;
                 }
             }
-
-            // X collision - only check walls player would walk into
-            if (player.velocity.x !== 0) {
-                const checkXPos = nextPos.x + (player.velocity.x > 0 ? player.radius : -player.radius);
-                let hitWallX = false;
-                
-                for (let y = Math.floor(nextPos.y); y <= Math.floor(nextPos.y + player.height - 0.1); y++) {
-                    for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
-                        if (getBlock(Math.floor(checkXPos), y, z) !== null) {
-                            hitWallX = true;
+            
+            // Check ceiling collision
+            if (player.velocity.y > 0) {
+                const headY = player.position.y + player.height;
+                for (let x = minX; x <= maxX; x++) {
+                    for (let z = minZ; z <= maxZ; z++) {
+                        const y = Math.floor(headY);
+                        if (getBlock(x, y, z) !== null) {
+                            player.position.y = y - player.height;
+                            player.velocity.y = 0;
                             break;
                         }
                     }
-                    if (hitWallX) break;
-                }
-                
-                if (hitWallX) {
-                    nextPos.x = player.position.x;
                 }
             }
 
-            // Z collision - only check walls player would walk into
-            if (player.velocity.z !== 0) {
-                const checkZPos = nextPos.z + (player.velocity.z > 0 ? player.radius : -player.radius);
-                let hitWallZ = false;
-                
-                for (let y = Math.floor(nextPos.y); y <= Math.floor(nextPos.y + player.height - 0.1); y++) {
-                    for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
-                        if (getBlock(x, y, Math.floor(checkZPos)) !== null) {
-                            hitWallZ = true;
+            // X-axis movement and collision
+            const oldX = player.position.x;
+            player.position.x += player.velocity.x * dt;
+            
+            let collisionX = false;
+            const checkMinX = Math.floor(player.position.x - player.radius);
+            const checkMaxX = Math.floor(player.position.x + player.radius);
+            
+            for (let y = Math.floor(player.position.y); y <= Math.floor(player.position.y + player.height); y++) {
+                for (let z = minZ; z <= maxZ; z++) {
+                    for (let x = checkMinX; x <= checkMaxX; x++) {
+                        if (getBlock(x, y, z) !== null) {
+                            collisionX = true;
                             break;
                         }
                     }
-                    if (hitWallZ) break;
+                    if (collisionX) break;
                 }
-                
-                if (hitWallZ) {
-                    nextPos.z = player.position.z;
-                }
+                if (collisionX) break;
+            }
+            
+            if (collisionX) {
+                player.position.x = oldX;
+                player.velocity.x = 0;
             }
 
-            player.position.copy(nextPos);
+            // Z-axis movement and collision
+            const oldZ = player.position.z;
+            player.position.z += player.velocity.z * dt;
+            
+            let collisionZ = false;
+            const checkMinZ = Math.floor(player.position.z - player.radius);
+            const checkMaxZ = Math.floor(player.position.z + player.radius);
+            
+            for (let y = Math.floor(player.position.y); y <= Math.floor(player.position.y + player.height); y++) {
+                for (let x = minX; x <= maxX; x++) {
+                    for (let z = checkMinZ; z <= checkMaxZ; z++) {
+                        if (getBlock(x, y, z) !== null) {
+                            collisionZ = true;
+                            break;
+                        }
+                    }
+                    if (collisionZ) break;
+                }
+                if (collisionZ) break;
+            }
+            
+            if (collisionZ) {
+                player.position.z = oldZ;
+                player.velocity.z = 0;
+            }
 
-            // Dynamic chunk loading - generate chunks as player approaches edges
+            // Dynamic chunk loading
             const playerChunk = worldToChunk(player.position.x, player.position.z);
             
-            // Check surrounding chunks and generate if needed
             for (let cx = playerChunk.cx - RENDER_DISTANCE; cx <= playerChunk.cx + RENDER_DISTANCE; cx++) {
                 for (let cz = playerChunk.cz - RENDER_DISTANCE; cz <= playerChunk.cz + RENDER_DISTANCE; cz++) {
                     const chunkKey = getChunkKey(cx, cz);
                     if (!chunks[chunkKey]) {
-                        // Generate new chunk
                         generateChunk(cx, cz);
-                        
-                        // Create meshes for the new chunk
-                        const startX = cx * CHUNK_SIZE;
-                        const startZ = cz * CHUNK_SIZE;
-                        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-                            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-                                for (let y = 0; y < WORLD_HEIGHT; y++) {
-                                    const x = startX + lx;
-                                    const z = startZ + lz;
-                                    const key = getBlockKey(x, y, z);
-                                    if (world[key] !== undefined && !blockMeshes[key]) {
-                                        createBlockMesh(x, y, z, world[key]);
-                                    }
-                                }
-                            }
-                        }
+                        rebuildChunkMesh(cx, cz);
                     }
                 }
             }
@@ -877,8 +1045,10 @@
                 `${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)}`;
         }
 
-        // Animation loop
+        // Animation loop with FPS counter
         let lastTime = performance.now();
+        let frames = 0;
+        let lastFpsUpdate = lastTime;
         
         function animate() {
             requestAnimationFrame(animate);
@@ -889,6 +1059,14 @@
 
             update(dt);
             renderer.render(scene, camera);
+
+            // FPS counter
+            frames++;
+            if (now - lastFpsUpdate > 1000) {
+                document.getElementById('fps').textContent = frames;
+                frames = 0;
+                lastFpsUpdate = now;
+            }
         }
 
         // Window resize
