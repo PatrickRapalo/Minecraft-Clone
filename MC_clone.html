@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minecraft Clone</title>
+    <title>Minecraft Clone - Optimized</title>
     <style>
         * {
             margin: 0;
@@ -152,6 +152,21 @@
         .hidden {
             display: none;
         }
+
+        #performance {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            color: #4CAF50;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            font-size: 12px;
+            z-index: 10;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 8px;
+            pointer-events: none;
+            font-family: 'Courier New', monospace;
+        }
     </style>
 </head>
 <body>
@@ -160,7 +175,7 @@
     <div id="ui">
         <div style="font-size: 16px; margin-bottom: 10px;"><strong>⛏ MINECRAFT CLONE</strong></div>
         <div>Position: <span id="position">0, 0, 0</span></div>
-        <div>Blocks Placed: <span id="blockCount">0</span></div>
+        <div>Chunk: <span id="chunk">0, 0</span></div>
         <div style="margin-top: 5px; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 4px;">
             <div style="font-size: 13px; color: #FFD700;">Inventory:</div>
             <div id="inventoryDisplay" style="font-size: 12px;">0 blocks</div>
@@ -175,17 +190,21 @@
             <div>WASD - Move | SPACE - Jump</div>
             <div>Mouse - Look Around</div>
             <div>Left Click - Break (Collect)</div>
-            <div>Right Click - Place (If You Have)</div>
+            <div>Right Click - Place</div>
             <div>1-9 - Select Block | ESC - Menu</div>
         </div>
     </div>
 
-    <div id="hotbar">
-        <!-- Hotbar will be populated dynamically based on inventory -->
+    <div id="performance">
+        <div>FPS: <span id="fps">0</span></div>
+        <div>Chunks: <span id="chunkCount">0</span></div>
+        <div>Draw Calls: <span id="drawCalls">0</span></div>
     </div>
 
+    <div id="hotbar"></div>
+
     <div id="instructions">
-        <h2>⛏ WELCOME TO MINECRAFT CLONE! ⛏</h2>
+        <h2>⛏ MINECRAFT CLONE - OPTIMIZED ⛏</h2>
         <p><strong>CONTROLS:</strong></p>
         <p><strong>WASD</strong> - Move around the world</p>
         <p><strong>SPACE</strong> - Jump</p>
@@ -195,6 +214,7 @@
         <p><strong>1-9 KEYS</strong> - Select block type from inventory</p>
         <p><strong>ESC</strong> - Release mouse</p>
         <p style="margin-top: 15px; font-size: 13px; color: #FFD700;">💡 Start by breaking blocks to collect materials!</p>
+        <p style="font-size: 12px; color: #4CAF50;">✨ Optimized with chunk-based rendering!</p>
         <button onclick="startGame()">CLICK TO START</button>
     </div>
 
@@ -209,28 +229,16 @@
     <script type="module">
         import * as THREE from 'three';
 
-        // Load TensorFlow.js
-        const tf = await import('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js');
-
         // Game state
         let gameStarted = false;
         let selectedBlock = 0;
-        let blockCount = 0;
-        let loadingProgress = 0;
 
-        // Inventory system - tracks how many of each block type the player has
+        // Inventory system
         const inventory = {
-            0: 0, // Dirt
-            1: 0, // Grass
-            2: 0, // Stone
-            3: 0, // Wood
-            4: 0, // Sand
-            5: 0, // Water
-            6: 0, // Snow
-            7: 0  // Dark Grass
+            0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0
         };
 
-        // Block metadata for UI
+        // Block metadata
         const blockInfo = {
             0: { name: 'Dirt', color: '#8B7355' },
             1: { name: 'Grass', gradient: 'linear-gradient(to bottom, #228B22 0%, #228B22 70%, #8B7355 70%, #8B7355 100%)' },
@@ -247,11 +255,10 @@
         scene.background = new THREE.Color(0x87CEEB);
         scene.fog = new THREE.Fog(0x87CEEB, 0, 150);
 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
         
-        const renderer = new THREE.WebGLRenderer({ antialias: false }); // Disabled antialiasing for performance
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = false; // Disabled shadows for better performance
         document.body.appendChild(renderer.domElement);
 
         // Lighting
@@ -262,26 +269,27 @@
         directionalLight.position.set(50, 100, 50);
         scene.add(directionalLight);
 
-        // Block materials with better colors
+        // Block materials
         const materials = {
-            0: new THREE.MeshLambertMaterial({ color: 0x8B7355 }), // Dirt
-            1: new THREE.MeshLambertMaterial({ color: 0x228B22 }), // Grass top
-            1.5: new THREE.MeshLambertMaterial({ color: 0x7D6E4D }), // Grass side
-            2: new THREE.MeshLambertMaterial({ color: 0x808080 }), // Stone
-            3: new THREE.MeshLambertMaterial({ color: 0x8B4513 }), // Wood
-            4: new THREE.MeshLambertMaterial({ color: 0xFFD700 }), // Sand
-            5: new THREE.MeshLambertMaterial({ color: 0x4169E1, transparent: true, opacity: 0.6 }), // Water
-            6: new THREE.MeshLambertMaterial({ color: 0xFFFFFF }), // Snow
-            7: new THREE.MeshLambertMaterial({ color: 0x2F4F2F }), // Dark Grass
+            0: new THREE.MeshLambertMaterial({ color: 0x8B7355 }),
+            1: new THREE.MeshLambertMaterial({ color: 0x228B22 }),
+            1.5: new THREE.MeshLambertMaterial({ color: 0x7D6E4D }),
+            2: new THREE.MeshLambertMaterial({ color: 0x808080 }),
+            3: new THREE.MeshLambertMaterial({ color: 0x8B4513 }),
+            4: new THREE.MeshLambertMaterial({ color: 0xFFD700 }),
+            5: new THREE.MeshLambertMaterial({ color: 0x4169E1, transparent: true, opacity: 0.6 }),
+            6: new THREE.MeshLambertMaterial({ color: 0xFFFFFF }),
+            7: new THREE.MeshLambertMaterial({ color: 0x2F4F2F }),
         };
 
-        // World data - Optimized for performance
-        const CHUNK_SIZE = 16; // Size of each chunk
-        const RENDER_DISTANCE = 2; // Number of chunks to render around player
-        const WORLD_HEIGHT = 20; // Reduced height for better performance
+        // World configuration
+        const CHUNK_SIZE = 16;
+        const RENDER_DISTANCE = 3;
+        const WORLD_HEIGHT = 20;
+        
         const world = {};
         const chunks = {};
-        const blockMeshes = {};
+        const chunkMeshes = {};
 
         function getBlockKey(x, y, z) {
             return `${x},${y},${z}`;
@@ -302,73 +310,30 @@
             return world[getBlockKey(x, y, z)] || null;
         }
 
-        function setBlock(x, y, z, type, updateMesh = true) {
+        function setBlock(x, y, z, type) {
             const key = getBlockKey(x, y, z);
             
             if (type === null) {
                 delete world[key];
-                if (updateMesh && blockMeshes[key]) {
-                    scene.remove(blockMeshes[key]);
-                    delete blockMeshes[key];
-                    blockCount--;
-                }
             } else {
                 world[key] = type;
-                if (updateMesh) {
-                    createBlockMesh(x, y, z, type);
-                    blockCount++;
-                }
             }
             
-            document.getElementById('blockCount').textContent = blockCount;
+            // Mark chunk for rebuild
+            const { cx, cz } = worldToChunk(x, z);
+            const chunkKey = getChunkKey(cx, cz);
+            if (chunks[chunkKey]) {
+                chunks[chunkKey].needsRebuild = true;
+            }
         }
 
-        function createBlockMesh(x, y, z, type) {
-            const key = getBlockKey(x, y, z);
-            
-            if (blockMeshes[key]) {
-                scene.remove(blockMeshes[key]);
-            }
-
-            const geometry = new THREE.BoxGeometry(1, 1, 1);
-            let mesh;
-
-            if (type === 1) { // Grass block
-                const grassMaterials = [
-                    materials[1.5], // right
-                    materials[1.5], // left
-                    materials[1],   // top (grass)
-                    materials[0],   // bottom (dirt)
-                    materials[1.5], // front
-                    materials[1.5]  // back
-                ];
-                mesh = new THREE.Mesh(geometry, grassMaterials);
-            } else {
-                mesh = new THREE.Mesh(geometry, materials[type]);
-            }
-
-            mesh.position.set(x, y, z);
-            scene.add(mesh);
-            blockMeshes[key] = mesh;
-        }
-
-        // ===== ML-POWERED TERRAIN GENERATION =====
-        
-        // Perlin noise approximation using neural network-like multi-octave approach
+        // Terrain generator
         class TerrainGenerator {
             constructor() {
                 this.seed = Math.random() * 1000;
-                this.noiseCache = new Map();
-                this.biomeCache = new Map();
             }
 
-            // Multi-octave Perlin-like noise
             noise2D(x, z, octaves = 4, persistence = 0.5, lacunarity = 2.0) {
-                const key = `${x},${z}`;
-                if (this.noiseCache.has(key)) {
-                    return this.noiseCache.get(key);
-                }
-
                 let total = 0;
                 let frequency = 1;
                 let amplitude = 1;
@@ -381,9 +346,7 @@
                     frequency *= lacunarity;
                 }
 
-                const result = total / maxValue;
-                this.noiseCache.set(key, result);
-                return result;
+                return total / maxValue;
             }
 
             interpolatedNoise(x, z) {
@@ -425,35 +388,17 @@
                 return a * (1 - f) + b * f;
             }
 
-            // Determine biome based on temperature and moisture
             getBiome(x, z) {
-                const key = `${x},${z}`;
-                if (this.biomeCache.has(key)) {
-                    return this.biomeCache.get(key);
-                }
-
-                // Use different noise for temperature and moisture
                 const temperature = this.noise2D(x * 0.01, z * 0.01, 3, 0.5, 2.0);
                 const moisture = this.noise2D(x * 0.01 + 1000, z * 0.01 + 1000, 3, 0.5, 2.0);
 
-                let biome;
-                if (temperature < -0.3) {
-                    biome = 'snow'; // Cold
-                } else if (temperature > 0.4 && moisture < -0.2) {
-                    biome = 'desert'; // Hot and dry
-                } else if (moisture < -0.3) {
-                    biome = 'plains'; // Dry
-                } else if (moisture > 0.3) {
-                    biome = 'forest'; // Wet
-                } else {
-                    biome = 'grassland'; // Default
-                }
-
-                this.biomeCache.set(key, biome);
-                return biome;
+                if (temperature < -0.3) return 'snow';
+                if (temperature > 0.4 && moisture < -0.2) return 'desert';
+                if (moisture < -0.3) return 'plains';
+                if (moisture > 0.3) return 'forest';
+                return 'grassland';
             }
 
-            // Generate terrain height with biome influence
             getTerrainHeight(x, z) {
                 const biome = this.getBiome(x, z);
                 const baseNoise = this.noise2D(x * 0.02, z * 0.02, 5, 0.5, 2.0);
@@ -462,52 +407,35 @@
                 let height = 0;
 
                 switch (biome) {
-                    case 'snow':
-                        height = 12 + baseNoise * 8 + detailNoise * 3;
-                        break;
-                    case 'desert':
-                        height = 8 + baseNoise * 4 + detailNoise * 2; // Flatter
-                        break;
-                    case 'plains':
-                        height = 10 + baseNoise * 3 + detailNoise * 1; // Very flat
-                        break;
-                    case 'forest':
-                        height = 10 + baseNoise * 6 + detailNoise * 4;
-                        break;
-                    case 'grassland':
-                        height = 10 + baseNoise * 5 + detailNoise * 2;
-                        break;
+                    case 'snow': height = 12 + baseNoise * 8 + detailNoise * 3; break;
+                    case 'desert': height = 8 + baseNoise * 4 + detailNoise * 2; break;
+                    case 'plains': height = 10 + baseNoise * 3 + detailNoise * 1; break;
+                    case 'forest': height = 10 + baseNoise * 6 + detailNoise * 4; break;
+                    case 'grassland': height = 10 + baseNoise * 5 + detailNoise * 2; break;
                 }
 
                 return Math.floor(height);
             }
 
-            // Get surface block type based on biome
-            getSurfaceBlock(biome, y) {
+            getSurfaceBlock(biome) {
                 switch (biome) {
-                    case 'snow':
-                        return 6; // Snow
-                    case 'desert':
-                        return 4; // Sand
-                    case 'plains':
-                        return 1; // Grass
-                    case 'forest':
-                        return 7; // Dark grass
-                    case 'grassland':
-                    default:
-                        return 1; // Grass
+                    case 'snow': return 6;
+                    case 'desert': return 4;
+                    case 'plains': return 1;
+                    case 'forest': return 7;
+                    default: return 1;
                 }
             }
         }
 
         const terrainGen = new TerrainGenerator();
 
-        // Generate a chunk of terrain
-        function generateChunk(cx, cz) {
+        // Generate chunk data (without creating meshes)
+        function generateChunkData(cx, cz) {
             const chunkKey = getChunkKey(cx, cz);
-            if (chunks[chunkKey]) return; // Already generated
+            if (chunks[chunkKey]) return;
 
-            chunks[chunkKey] = true;
+            chunks[chunkKey] = { needsRebuild: false };
 
             const startX = cx * CHUNK_SIZE;
             const startZ = cz * CHUNK_SIZE;
@@ -519,38 +447,33 @@
 
                     const height = terrainGen.getTerrainHeight(x, z);
                     const biome = terrainGen.getBiome(x, z);
-                    const surfaceBlock = terrainGen.getSurfaceBlock(biome, height);
+                    const surfaceBlock = terrainGen.getSurfaceBlock(biome);
 
-                    // Generate vertical layers
                     for (let y = 0; y <= height && y < WORLD_HEIGHT; y++) {
                         let blockType;
 
                         if (y === height) {
-                            // Surface layer
                             blockType = surfaceBlock;
                         } else if (y >= height - 3) {
-                            // Subsurface (dirt or sand)
                             blockType = (biome === 'desert') ? 4 : 0;
                         } else {
-                            // Deep underground (stone)
                             blockType = 2;
                         }
 
-                        setBlock(x, y, z, blockType, false);
+                        world[getBlockKey(x, y, z)] = blockType;
                     }
 
-                    // Add trees in forest biome
+                    // Add trees
                     if (biome === 'forest' && Math.random() < 0.05) {
                         const treeHeight = 4 + Math.floor(Math.random() * 3);
                         for (let ty = 1; ty <= treeHeight; ty++) {
-                            setBlock(x, height + ty, z, 3, false); // Wood trunk
+                            world[getBlockKey(x, height + ty, z)] = 3;
                         }
-                        // Simple leaves
                         for (let dx = -1; dx <= 1; dx++) {
                             for (let dz = -1; dz <= 1; dz++) {
                                 for (let dy = 0; dy < 2; dy++) {
                                     if (dx === 0 && dz === 0 && dy === 0) continue;
-                                    setBlock(x + dx, height + treeHeight + dy, z + dz, 7, false);
+                                    world[getBlockKey(x + dx, height + treeHeight + dy, z + dz)] = 7;
                                 }
                             }
                         }
@@ -558,17 +481,108 @@
                 }
             }
 
-            loadingProgress++;
+            chunks[chunkKey].needsRebuild = true;
         }
 
-        // Initialize world with chunks around spawn
+        // Build merged mesh for a chunk
+        function buildChunkMesh(cx, cz) {
+            const chunkKey = getChunkKey(cx, cz);
+            const chunk = chunks[chunkKey];
+            if (!chunk) return;
+
+            chunk.needsRebuild = false;
+
+            // Remove old mesh
+            if (chunkMeshes[chunkKey]) {
+                scene.remove(chunkMeshes[chunkKey]);
+                chunkMeshes[chunkKey].geometry.dispose();
+                delete chunkMeshes[chunkKey];
+            }
+
+            const startX = cx * CHUNK_SIZE;
+            const startZ = cz * CHUNK_SIZE;
+
+            // Separate geometries for each material type
+            const geometries = {};
+            for (let i = 0; i <= 7; i++) {
+                geometries[i] = [];
+            }
+
+            const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+            // Build faces for each block
+            for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+                for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+                    for (let y = 0; y < WORLD_HEIGHT; y++) {
+                        const x = startX + lx;
+                        const z = startZ + lz;
+                        const blockType = getBlock(x, y, z);
+                        
+                        if (blockType === null) continue;
+
+                        // Check if block is visible (has at least one exposed face)
+                        const isVisible = 
+                            !getBlock(x + 1, y, z) ||
+                            !getBlock(x - 1, y, z) ||
+                            !getBlock(x, y + 1, z) ||
+                            !getBlock(x, y - 1, z) ||
+                            !getBlock(x, y, z + 1) ||
+                            !getBlock(x, y, z - 1);
+
+                        if (!isVisible) continue;
+
+                        // Create instance for this block
+                        const matrix = new THREE.Matrix4();
+                        matrix.setPosition(x, y, z);
+                        
+                        const geo = boxGeometry.clone();
+                        geo.applyMatrix4(matrix);
+
+                        if (blockType === 1) {
+                            // Grass block - use grass material
+                            geometries[1].push(geo);
+                        } else {
+                            geometries[blockType].push(geo);
+                        }
+                    }
+                }
+            }
+
+            // Merge geometries and create meshes
+            const group = new THREE.Group();
+
+            for (let materialType in geometries) {
+                if (geometries[materialType].length === 0) continue;
+
+                const mergedGeometry = THREE.BufferGeometryUtils.mergeGeometries(geometries[materialType]);
+                
+                let mesh;
+                if (materialType == 1) {
+                    // Grass block with special materials
+                    const grassMaterials = [
+                        materials[1.5], materials[1.5],
+                        materials[1], materials[0],
+                        materials[1.5], materials[1.5]
+                    ];
+                    mesh = new THREE.Mesh(mergedGeometry, grassMaterials);
+                } else {
+                    mesh = new THREE.Mesh(mergedGeometry, materials[materialType]);
+                }
+
+                group.add(mesh);
+            }
+
+            scene.add(group);
+            chunkMeshes[chunkKey] = group;
+        }
+
+        // Initialize world
         async function initWorld() {
             const instructionsEl = document.getElementById('instructions');
             const buttonEl = instructionsEl.querySelector('button');
             buttonEl.textContent = 'Generating World...';
             buttonEl.disabled = true;
 
-            // Generate initial chunks
             const chunksToGenerate = [];
 
             for (let cx = -RENDER_DISTANCE; cx <= RENDER_DISTANCE; cx++) {
@@ -577,33 +591,32 @@
                 }
             }
 
-            // Generate chunks progressively
             for (let i = 0; i < chunksToGenerate.length; i++) {
                 const { cx, cz } = chunksToGenerate[i];
-                generateChunk(cx, cz);
+                generateChunkData(cx, cz);
                 
                 const progress = Math.floor((i / chunksToGenerate.length) * 100);
                 buttonEl.textContent = `Generating World... ${progress}%`;
                 
-                // Allow UI to update
-                if (i % 5 === 0) {
+                if (i % 3 === 0) {
                     await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
 
-            // Now create all the meshes
-            buttonEl.textContent = 'Creating Blocks...';
-            let meshCount = 0;
-            const totalBlocks = Object.keys(world).length;
+            buttonEl.textContent = 'Building Meshes...';
 
-            for (const key in world) {
-                const [x, y, z] = key.split(',').map(Number);
-                createBlockMesh(x, y, z, world[key]);
-                meshCount++;
+            // Import BufferGeometryUtils
+            const { BufferGeometryUtils } = await import('https://cdn.jsdelivr.net/npm/three@0.167.0/examples/jsm/utils/BufferGeometryUtils.js');
+            window.THREE.BufferGeometryUtils = BufferGeometryUtils;
 
-                if (meshCount % 200 === 0) {
-                    const progress = Math.floor((meshCount / totalBlocks) * 100);
-                    buttonEl.textContent = `Creating Blocks... ${progress}%`;
+            for (let i = 0; i < chunksToGenerate.length; i++) {
+                const { cx, cz } = chunksToGenerate[i];
+                buildChunkMesh(cx, cz);
+                
+                const progress = Math.floor((i / chunksToGenerate.length) * 100);
+                buttonEl.textContent = `Building Meshes... ${progress}%`;
+                
+                if (i % 2 === 0) {
                     await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
@@ -621,7 +634,7 @@
             jumpPower: 8,
             onGround: false,
             height: 1.8,
-            radius: 0.25, // Reduced from 0.3 to prevent getting stuck
+            radius: 0.25,
             mouseSensitivity: 1.0
         };
 
@@ -635,7 +648,6 @@
         window.addEventListener('keydown', e => {
             keys[e.key.toLowerCase()] = true;
             
-            // Block selection - only works if blocks are in inventory
             if (e.key >= '1' && e.key <= '9') {
                 const availableBlocks = Object.keys(inventory)
                     .map(Number)
@@ -653,7 +665,6 @@
         
         window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
-        // Mouse sensitivity slider
         const sensitivitySlider = document.getElementById('sensitivitySlider');
         const sensitivityValue = document.getElementById('sensitivityValue');
         
@@ -680,24 +691,42 @@
             player.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.rotation.x));
         });
 
-        // Raycasting for block interaction
+        // Raycasting
         const raycaster = new THREE.Raycaster();
         const rayDirection = new THREE.Vector3();
 
-        function raycast() {
+        function raycastBlocks() {
             camera.getWorldDirection(rayDirection);
             raycaster.set(camera.position, rayDirection);
 
-            const intersects = raycaster.intersectObjects(Object.values(blockMeshes));
-
-            if (intersects.length > 0) {
-                const intersect = intersects[0];
-                const blockPos = intersect.object.position.clone();
-                return {
-                    hit: true,
-                    position: blockPos,
-                    normal: intersect.face.normal
-                };
+            const maxDistance = 5;
+            const step = 0.1;
+            
+            for (let dist = 0; dist < maxDistance; dist += step) {
+                const checkPos = camera.position.clone().add(rayDirection.clone().multiplyScalar(dist));
+                const x = Math.floor(checkPos.x);
+                const y = Math.floor(checkPos.y);
+                const z = Math.floor(checkPos.z);
+                
+                if (getBlock(x, y, z) !== null) {
+                    // Determine which face was hit
+                    const localPos = checkPos.clone().sub(new THREE.Vector3(x, y, z));
+                    let normal = new THREE.Vector3();
+                    
+                    const epsilon = 0.01;
+                    if (localPos.x < epsilon) normal.set(-1, 0, 0);
+                    else if (localPos.x > 1 - epsilon) normal.set(1, 0, 0);
+                    else if (localPos.y < epsilon) normal.set(0, -1, 0);
+                    else if (localPos.y > 1 - epsilon) normal.set(0, 1, 0);
+                    else if (localPos.z < epsilon) normal.set(0, 0, -1);
+                    else if (localPos.z > 1 - epsilon) normal.set(0, 0, 1);
+                    
+                    return {
+                        hit: true,
+                        position: new THREE.Vector3(x, y, z),
+                        normal: normal
+                    };
+                }
             }
 
             return { hit: false };
@@ -706,22 +735,18 @@
         renderer.domElement.addEventListener('mousedown', (e) => {
             if (!mouse.locked) return;
 
-            const hit = raycast();
+            const hit = raycastBlocks();
             if (!hit.hit) return;
 
-            if (e.button === 0) { // Left click - break
+            if (e.button === 0) {
                 const blockType = getBlock(hit.position.x, hit.position.y, hit.position.z);
                 setBlock(hit.position.x, hit.position.y, hit.position.z, null);
-                addToInventory(blockType); // Add broken block to inventory
-            } else if (e.button === 2) { // Right click - place
-                // Check if player has blocks in inventory
-                if (!removeFromInventory(selectedBlock)) {
-                    return; // No blocks to place
-                }
+                addToInventory(blockType);
+            } else if (e.button === 2) {
+                if (!removeFromInventory(selectedBlock)) return;
                 
                 const placePos = hit.position.clone().add(hit.normal);
                 
-                // Don't place block where player is
                 const playerBox = new THREE.Box3(
                     new THREE.Vector3(
                         player.position.x - player.radius,
@@ -743,7 +768,6 @@
                 if (!playerBox.intersectsBox(blockBox)) {
                     setBlock(placePos.x, placePos.y, placePos.z, selectedBlock);
                 } else {
-                    // Failed to place, give block back
                     addToInventory(selectedBlock);
                 }
             }
@@ -754,30 +778,27 @@
         let hotbarNeedsUpdate = true;
 
         function renderHotbar() {
-            if (!hotbarNeedsUpdate) return; // Skip if no changes
+            if (!hotbarNeedsUpdate) return;
             hotbarNeedsUpdate = false;
 
             const hotbar = document.getElementById('hotbar');
-            hotbar.innerHTML = ''; // Clear existing slots
+            hotbar.innerHTML = '';
 
-            // Get all block types that have inventory > 0
             const availableBlocks = Object.keys(inventory)
                 .map(Number)
                 .filter(blockType => inventory[blockType] > 0);
 
             if (availableBlocks.length === 0) {
                 hotbar.innerHTML = '<div style="color: white; padding: 10px; font-size: 14px;">Break blocks to collect them!</div>';
-                selectedBlock = -1; // No valid selection
+                selectedBlock = -1;
                 return;
             }
 
-            // Ensure selected block is valid
             if (!availableBlocks.includes(selectedBlock) || selectedBlock === -1) {
                 selectedBlock = availableBlocks[0];
             }
 
-            // Create slots for blocks in inventory
-            availableBlocks.forEach((blockType, index) => {
+            availableBlocks.forEach((blockType) => {
                 const slot = document.createElement('div');
                 slot.className = 'hotbar-slot';
                 if (blockType === selectedBlock) {
@@ -853,7 +874,6 @@
         function update(dt) {
             if (!gameStarted) return;
 
-            // Movement
             const forward = new THREE.Vector3();
             const right = new THREE.Vector3();
             
@@ -878,26 +898,21 @@
             player.velocity.x = moveX * player.speed;
             player.velocity.z = moveZ * player.speed;
 
-            // Jump
             if (keys[' '] && player.onGround) {
                 player.velocity.y = player.jumpPower;
                 player.onGround = false;
             }
 
-            // Gravity
             player.velocity.y -= GRAVITY * dt;
 
-            // Apply velocity
             const nextPos = player.position.clone();
             nextPos.x += player.velocity.x * dt;
             nextPos.y += player.velocity.y * dt;
             nextPos.z += player.velocity.z * dt;
 
-            // Collision detection - simplified and fixed
             player.onGround = false;
             
-            // Y collision - check if there's ground below us
-            const checkY = nextPos.y - 0.1; // Slightly below feet
+            const checkY = nextPos.y - 0.1;
             let hitGround = false;
             
             for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
@@ -917,7 +932,6 @@
                 player.onGround = true;
             }
             
-            // Ceiling collision
             const headY = nextPos.y + player.height;
             for (let x = Math.floor(nextPos.x - player.radius); x <= Math.floor(nextPos.x + player.radius); x++) {
                 for (let z = Math.floor(nextPos.z - player.radius); z <= Math.floor(nextPos.z + player.radius); z++) {
@@ -927,7 +941,6 @@
                 }
             }
 
-            // X collision - only check walls player would walk into
             if (player.velocity.x !== 0) {
                 const checkXPos = nextPos.x + (player.velocity.x > 0 ? player.radius : -player.radius);
                 let hitWallX = false;
@@ -947,7 +960,6 @@
                 }
             }
 
-            // Z collision - only check walls player would walk into
             if (player.velocity.z !== 0) {
                 const checkZPos = nextPos.z + (player.velocity.z > 0 ? player.radius : -player.radius);
                 let hitWallZ = false;
@@ -969,45 +981,41 @@
 
             player.position.copy(nextPos);
 
-            // Dynamic chunk loading - generate chunks as player approaches edges
+            // Dynamic chunk loading
             const playerChunk = worldToChunk(player.position.x, player.position.z);
             
-            // Check surrounding chunks and generate if needed
             for (let cx = playerChunk.cx - RENDER_DISTANCE; cx <= playerChunk.cx + RENDER_DISTANCE; cx++) {
                 for (let cz = playerChunk.cz - RENDER_DISTANCE; cz <= playerChunk.cz + RENDER_DISTANCE; cz++) {
                     const chunkKey = getChunkKey(cx, cz);
                     if (!chunks[chunkKey]) {
-                        // Generate new chunk
-                        generateChunk(cx, cz);
-                        
-                        // Create meshes for the new chunk
-                        const startX = cx * CHUNK_SIZE;
-                        const startZ = cz * CHUNK_SIZE;
-                        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-                            for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-                                for (let y = 0; y < WORLD_HEIGHT; y++) {
-                                    const x = startX + lx;
-                                    const z = startZ + lz;
-                                    const key = getBlockKey(x, y, z);
-                                    if (world[key] !== undefined && !blockMeshes[key]) {
-                                        createBlockMesh(x, y, z, world[key]);
-                                    }
-                                }
-                            }
-                        }
+                        generateChunkData(cx, cz);
                     }
                 }
             }
 
-            // Update camera
+            // Rebuild chunks that need it
+            for (let cx = playerChunk.cx - RENDER_DISTANCE; cx <= playerChunk.cx + RENDER_DISTANCE; cx++) {
+                for (let cz = playerChunk.cz - RENDER_DISTANCE; cz <= playerChunk.cz + RENDER_DISTANCE; cz++) {
+                    const chunkKey = getChunkKey(cx, cz);
+                    if (chunks[chunkKey] && chunks[chunkKey].needsRebuild) {
+                        buildChunkMesh(cx, cz);
+                    }
+                }
+            }
+
             camera.position.copy(player.position);
             camera.position.y += player.height * 0.9;
             camera.rotation.copy(player.rotation);
 
-            // Update UI
             document.getElementById('position').textContent = 
                 `${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)}`;
+            document.getElementById('chunk').textContent = 
+                `${playerChunk.cx}, ${playerChunk.cz}`;
         }
+
+        // Performance monitoring
+        let frameCount = 0;
+        let lastFpsUpdate = performance.now();
 
         // Animation loop
         let lastTime = performance.now();
@@ -1021,25 +1029,32 @@
 
             update(dt);
             renderer.render(scene, camera);
+
+            // Update FPS
+            frameCount++;
+            if (now - lastFpsUpdate > 1000) {
+                document.getElementById('fps').textContent = frameCount;
+                document.getElementById('chunkCount').textContent = Object.keys(chunkMeshes).length;
+                document.getElementById('drawCalls').textContent = renderer.info.render.calls;
+                frameCount = 0;
+                lastFpsUpdate = now;
+            }
         }
 
-        // Window resize
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // Start game
         window.startGame = function() {
             document.getElementById('instructions').classList.add('hidden');
             gameStarted = true;
             renderer.domElement.requestPointerLock();
         };
 
-        // Initialize
         initWorld();
-        renderHotbar(); // Render empty hotbar initially
+        renderHotbar();
         animate();
     </script>
 </body>
