@@ -1,0 +1,178 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    background: #000;
+}
+
+#ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+    font-size: 14px;
+    z-index: 10;
+    background: rgba(0,0,0,0.5);
+    padding: 15px;
+    border-radius: 8px;
+    pointer-events: none;
+}
+
+#hotbar {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+}
+
+.hotbar-slot {
+    width: 70px;
+    height: 70px;
+    background: rgba(50, 50, 50, 0.9);
+    border: 3px solid #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.block-preview {
+    width: 40px;
+    height: 40px;
+    border: 2px solid rgba(255,255,255,0.3);
+}
+
+.hotbar-slot.selected {
+    border-color: white;
+    box-shadow: 0 0 15px rgba(255,255,255,0.8);
+    transform: scale(1.1);
+    background: rgba(80, 80, 80, 0.9);
+}
+
+#crosshair {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 24px;
+    height: 24px;
+    pointer-events: none;
+    z-index: 100;
+}
+
+#crosshair::before,
+#crosshair::after {
+    content: '';
+    position: absolute;
+    background: white;
+    box-shadow: 0 0 3px black;
+}
+
+#crosshair::before {
+    width: 3px;
+    height: 24px;
+    left: 10.5px;
+    top: 0;
+}
+
+#crosshair::after {
+    width: 24px;
+    height: 3px;
+    top: 10.5px;
+    left: 0;
+}
+
+#instructions {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.95);
+    color: white;
+    padding: 40px;
+    border-radius: 15px;
+    text-align: center;
+    z-index: 1000;
+    max-width: 550px;
+    border: 3px solid #4CAF50;
+}
+
+#instructions h2 {
+    margin-bottom: 25px;
+    color: #4CAF50;
+    font-size: 28px;
+}
+
+#instructions p {
+    margin: 12px 0;
+    line-height: 1.8;
+    font-size: 15px;
+}
+
+#instructions button {
+    margin-top: 25px;
+    padding: 15px 40px;
+    font-size: 20px;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    transition: all 0.3s;
+}
+
+#instructions button:hover {
+    background: #45a049;
+    transform: scale(1.05);
+}
+
+.hidden {
+    display: none;
+}
+
+#performance {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    color: #4CAF50;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+    font-size: 12px;
+    z-index: 10;
+    background: rgba(0,0,0,0.5);
+    padding: 10px;
+    border-radius: 8px;
+    pointer-events: none;
+    font-family: 'Courier New', monospace;
+}
+
+#loadingBar {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 15px;
+}
+
+#loadingProgress {
+    height: 100%;
+    background: #4CAF50;
+    width: 0%;
+    transition: width 0.3s;
+}
